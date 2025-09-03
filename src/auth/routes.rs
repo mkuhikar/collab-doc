@@ -1,5 +1,5 @@
 use axum::{routing::{post,get},Router};
-use crate::models::{signup,login,get_user};
+use crate::auth::handlers::{signup,login,get_user};
 use sqlx::PgPool;
 pub fn create_routes(pool: PgPool) -> Router {
     Router::new()

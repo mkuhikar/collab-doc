@@ -1,5 +1,5 @@
 use axum::{extract::{State,Json},http::StatusCode};
-use serde::{Deserialize,Serialize};
+
 use sqlx::PgPool;
 use axum::extract::Path;
 use axum::{
@@ -7,30 +7,14 @@ use axum::{
     extract::{FromRequestParts},
     http::{request::Parts},
 };
-use async_trait::async_trait;
+
 use argon2::{Argon2, PasswordHasher,PasswordHash, PasswordVerifier};
 use argon2::password_hash::{SaltString};
 use jsonwebtoken::{encode, EncodingKey, Header};
 use jsonwebtoken::{decode, DecodingKey, Validation};
 use chrono::{Utc, Duration};
 use std::env;
-#[derive(Deserialize)]
-pub struct SignupRequest {
-    pub name: String,
-    pub email: String,
-    pub password: String,
-}
-#[derive(Debug,Deserialize,Serialize)]
-pub struct User {
-    id: Option<i32>,
-    name: String,
-    email: String,
-}
-#[derive(sqlx::FromRow)]
-struct UserId {
-    id: i32,
-}
-
+use crate::auth::models::{SignupRequest,LoginRequest,User,AuthUser,Claims, UserId};
 pub async fn signup(State(pool):State<PgPool> ,Json(user): Json<SignupRequest>) -> Result<Json<User>, StatusCode> {
     let salt = b"random_salt";
     let password_hash = Argon2::default()
@@ -49,23 +33,12 @@ pub async fn signup(State(pool):State<PgPool> ,Json(user): Json<SignupRequest>) 
 .await.map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
     Ok(Json(User {
-        id: Some(row.id),
+        id: row.id,
         name: user.name,
         email: user.email,
     }))
 }
 
-#[derive(Deserialize)]
-pub struct LoginRequest {
-    pub email: String,
-    pub password: String,
-}
-
-#[derive(serde::Serialize,serde::Deserialize)]
-struct Claims {
-    sub: String,   // subject (user email)
-    exp: usize,    // expiration
-}
 pub async fn login(
     State(pool): State<PgPool>,
     Json(payload): Json<LoginRequest>,
@@ -101,6 +74,7 @@ pub async fn login(
     let claims = Claims {
         sub: user.email,
         exp: expiration,
+        user_id: user.id,
     };
     let secret = env::var("JWT_SECRET")
     .map_err(|_| (axum::http::StatusCode::INTERNAL_SERVER_ERROR, "Missing JWT_SECRET env var".to_string()))?;
@@ -139,11 +113,6 @@ pub async fn get_user(
 }
 
 
-
-
-pub struct AuthUser(pub Claims);
-
-
 impl<S> FromRequestParts<S> for AuthUser
 where
     S: Send + Sync,
@@ -176,10 +145,5 @@ where
     }
 }
 
-pub async fn me(
-    AuthUser(user): AuthUser,  // <-- extractor ensures JWT is valid
-) -> Result<Json<String>, (axum::http::StatusCode, String)> {
-    // Here `user.sub` is the email (or id) from JWT
-    Ok(Json(format!("Hello, {}!", user.sub)))
-}
+
 
