@@ -2,6 +2,8 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 use sqlx::FromRow;
 use chrono::{DateTime, Utc};
+use std::str::FromStr;
+
 
 #[derive(Debug, Serialize, Deserialize, FromRow)]
 pub struct Document {
@@ -38,7 +40,7 @@ pub struct ShareRequest {
     pub role: String, // "reader" or "editor"
 }
 
-#[derive(Debug)]
+#[derive(Debug,FromRow)]
 pub struct Owner {
     pub owner_id: i32,
 }
@@ -48,4 +50,16 @@ pub struct Owner {
 pub enum Role {
     Reader,
     Editor,
+}
+
+impl FromStr for Role {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s.to_lowercase().as_str() {
+            "reader" => Ok(Role::Reader),
+            "editor" => Ok(Role::Editor),
+            _ => Err(format!("Invalid role: {}", s)),
+        }
+    }
 }
