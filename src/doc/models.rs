@@ -25,3 +25,14 @@ pub struct UpdateDocument {
     pub content: Option<String>,
 }
 
+#[derive(Debug, Serialize, Deserialize, FromRow)]
+pub struct Collaborator {
+    pub user_id: i32,
+    pub role: String,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct ShareRequest {
+    pub user_id: i32,
+    pub role: String, // "reader" or "editor"
+}

@@ -103,3 +103,115 @@ pub async fn delete_doc(
 
     Ok(format!("Document {} deleted", doc_id))
 }
+
+#[axum::debug_handler]
+    pub async fn share_doc(
+        State(pool): State<PgPool>,
+        AuthUser(_user): AuthUser,
+        Path(doc_id): Path<Uuid>,
+        Json(payload): Json<crate::doc::models::ShareRequest>,
+    ) -> Result<String, String> {
+        // Check if the document exists and the user is the owner
+        let owner = sqlx::query_as!(
+            r#"
+            SELECT owner_id FROM documents WHERE id = $1
+            "#,
+            doc_id
+        )
+        .fetch_one(&pool)
+        .await
+        .map_err(|e| e.to_string())?;
+        if owner.owner_id != _user.user_id {
+            return Err("Only the owner can share the document".to_string());
+        }
+        //Check if the user already has access to the doc
+        let existing = sqlx::query_as!(
+            r#"
+            SELECT * FROM doc_collaborators WHERE doc_id = $1 AND user_id = $2
+            "#,
+            doc_id,
+            payload.user_id
+        )
+        .fetch_optional(&pool)
+        .await
+        .map_err(|e| e.to_string())?;
+        if existing.is_some() {
+            return Err("User already has access to the document".to_string());
+        }
+
+        
+        // Add collaborator
+        sqlx::query_as!(
+            r#"
+            INSERT INTO doc_collaborators (doc_id, user_id, role)
+            VALUES ($1, $2, $3)
+            ON CONFLICT (doc_id, user_id) DO UPDATE SET role = EXCLUDED.role
+            "#,
+            doc_id,
+            payload.user_id,
+            payload.role
+        )
+        .execute(&pool)
+        .await
+        .map_err(|e| e.to_string())?;
+
+        Ok(format!("User {} added as {} to document {}", payload.user_id, payload.role, doc_id))
+    }
+
+//get user docs
+#[axum::debug_handler]
+    pub async fn get_user_docs(
+        State(pool): State<PgPool>,
+        AuthUser(_user): AuthUser,
+    ) -> Result<Json<Vec<Document>>, String> {
+        let docs = sqlx::query_as!(
+            Document,
+            r#"
+            SELECT d.id, d.owner_id, d.title, d.content, d.created_at, d.updated_at
+            FROM documents d
+            LEFT JOIN doc_collaborators dc ON d.id = dc.doc_id
+            WHERE d.owner_id = $1 OR dc.user_id = $1
+            "#,
+            _user.user_id
+        )
+        .fetch_all(&pool)
+        .await
+        .map_err(|e| e.to_string())?;
+
+        Ok(Json(docs))
+    }
+
+//get collaborators for a doc
+#[axum::debug_handler]
+    pub async fn get_doc_collaborators(
+        State(pool): State<PgPool>,
+        AuthUser(_user): AuthUser,
+        Path(doc_id): Path<Uuid>,
+    ) -> Result<Json<Vec<crate::doc::models::Collaborator>>, String> {
+        // Check if the user has access to the document
+        let access = sqlx::query_as!(
+            crate::doc::models::Collaborator,
+            r#"
+            SELECT * FROM doc_collaborators WHERE doc_id = $1 AND user_id = $2
+            "#,
+            doc_id,
+            _user.user_id
+        )
+        .fetch_optional(&pool)
+        .await
+        .map_err(|e| e.to_string())?;
+        if access.is_none() {
+            return Err("You do not have access to this document".to_string());
+        }
+        let collaborators = sqlx::query_as!(
+            crate::doc::models::Collaborator,
+            r#"
+            SELECT user_id, role FROM doc_collaborators WHERE doc_id = $1
+            "#,
+            doc_id
+        )
+        .fetch_all(&pool)
+        .await
+        .map_err(|e| e.to_string())?;
+        Ok(Json(collaborators))
+    }

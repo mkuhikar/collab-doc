@@ -11,3 +11,5 @@ pub fn create_routes(pool: PgPool) -> Router {
         .route("/docs/{id}", delete(delete_doc))
         .with_state(pool)
 }
+
+
