@@ -27,12 +27,25 @@ pub struct UpdateDocument {
 
 #[derive(Debug, Serialize, Deserialize, FromRow)]
 pub struct Collaborator {
+    pub doc_id: Uuid,
     pub user_id: i32,
-    pub role: String,
+    pub role: Role,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct ShareRequest {
     pub user_id: i32,
     pub role: String, // "reader" or "editor"
+}
+
+#[derive(Debug)]
+pub struct Owner {
+    pub owner_id: i32,
+}
+
+#[derive(Debug, Serialize, Deserialize, sqlx::Type)]
+#[sqlx(type_name = "role", rename_all = "lowercase")] 
+pub enum Role {
+    Reader,
+    Editor,
 }

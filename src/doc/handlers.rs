@@ -3,7 +3,7 @@ use axum::{
     Json,
 };
 use sqlx::PgPool;
-use crate::doc::models::{Document, CreateDocument, UpdateDocument};
+use crate::doc::models::{Collaborator, Document, CreateDocument, UpdateDocument, Owner, Role};
 use crate::auth::models::AuthUser;
 use uuid::Uuid;
 
@@ -113,6 +113,7 @@ pub async fn delete_doc(
     ) -> Result<String, String> {
         // Check if the document exists and the user is the owner
         let owner = sqlx::query_as!(
+            Owner,
             r#"
             SELECT owner_id FROM documents WHERE id = $1
             "#,
@@ -126,6 +127,7 @@ pub async fn delete_doc(
         }
         //Check if the user already has access to the doc
         let existing = sqlx::query_as!(
+            Collaborator,
             r#"
             SELECT * FROM doc_collaborators WHERE doc_id = $1 AND user_id = $2
             "#,
@@ -141,17 +143,19 @@ pub async fn delete_doc(
 
         
         // Add collaborator
-        sqlx::query_as!(
+        let collaborator = sqlx::query_as!(
+            Collaborator,
             r#"
             INSERT INTO doc_collaborators (doc_id, user_id, role)
             VALUES ($1, $2, $3)
             ON CONFLICT (doc_id, user_id) DO UPDATE SET role = EXCLUDED.role
+            RETURNING user_id, role
             "#,
             doc_id,
             payload.user_id,
             payload.role
         )
-        .execute(&pool)
+        .fetch_one(&pool)
         .await
         .map_err(|e| e.to_string())?;
 
@@ -190,7 +194,7 @@ pub async fn delete_doc(
     ) -> Result<Json<Vec<crate::doc::models::Collaborator>>, String> {
         // Check if the user has access to the document
         let access = sqlx::query_as!(
-            crate::doc::models::Collaborator,
+            Collaborator,
             r#"
             SELECT * FROM doc_collaborators WHERE doc_id = $1 AND user_id = $2
             "#,
@@ -204,9 +208,9 @@ pub async fn delete_doc(
             return Err("You do not have access to this document".to_string());
         }
         let collaborators = sqlx::query_as!(
-            crate::doc::models::Collaborator,
+            Collaborator,
             r#"
-            SELECT user_id, role FROM doc_collaborators WHERE doc_id = $1
+            SELECT doc_id, user_id, role  FROM doc_collaborators WHERE doc_id = $1
             "#,
             doc_id
         )
