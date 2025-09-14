@@ -203,31 +203,16 @@ pub async fn get_doc_collaborators(
     Path(doc_id): Path<Uuid>,
 ) -> Result<Json<Vec<crate::doc::models::Collaborator>>, String> {
     // Check if the user has access to the document
-    let access = sqlx::query_as::<_, crate::doc::models::Collaborator>(
-        r#"
-        SELECT doc_id, user_id, role
-        FROM doc_collaborators
-        WHERE doc_id = $1 AND user_id = $2
-        "#
-    )
-    .bind(doc_id)
-    .bind(_user.user_id)
-    .fetch_optional(&pool)
-    .await
-    .map_err(|e| e.to_string())?;
-
-    if access.is_none() {
-        return Err("You do not have access to this document".to_string());
-    }
-
-    // Fetch all collaborators for the document
     let collaborators = sqlx::query_as::<_, crate::doc::models::Collaborator>(
         r#"
-        SELECT doc_id, user_id, role
-        FROM doc_collaborators
-        WHERE doc_id = $1
+        SELECT dc.doc_id, dc.user_id, dc.role
+        FROM doc_collaborators AS dc, documents AS d
+        WHERE d.owner_id = $1 
+          AND d.id = dc.doc_id
+          AND dc.doc_id = $2
         "#
     )
+    .bind(_user.user_id)
     .bind(doc_id)
     .fetch_all(&pool)
     .await
