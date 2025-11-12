@@ -111,6 +111,28 @@ pub async fn get_user(
         )),
     }
 }
+pub async fn get_user_by_email(
+    State(pool): State<PgPool>, // DB pool from app state
+    Path(email): Path<String>,   // Extract ID from URL
+    AuthUser(_user): AuthUser,  // <-- extractor ensures JWT is valid
+) -> Result<Json<User>, (axum::http::StatusCode, String)> {
+    let result = sqlx::query_as!(
+    User,
+    "SELECT id, name, email FROM users WHERE email = $1",
+    email
+)
+.fetch_one(&pool)
+.await;
+
+
+    match result {
+        Ok(user) => Ok(Json(user)),
+        Err(e) => Err((
+            axum::http::StatusCode::NOT_FOUND,
+            format!("User not found for email: {}", e),
+        )),
+    }
+}
 
 
 impl<S> FromRequestParts<S> for AuthUser
@@ -125,12 +147,15 @@ where
             .get("Authorization")
             .and_then(|v| v.to_str().ok())
             .ok_or((StatusCode::UNAUTHORIZED, "Missing Authorization header".to_string()))?;
+        println!("🔍 Received Authorization header: {}", auth_header);
 
         if !auth_header.starts_with("Bearer ") {
             return Err((StatusCode::UNAUTHORIZED, "Invalid token format".to_string()));
         }
 
         let token = &auth_header[7..]; // remove "Bearer "
+        println!("🔍 Extracted token: {}", token);
+
         let secret = env::var("JWT_SECRET")
     .map_err(|_| (axum::http::StatusCode::INTERNAL_SERVER_ERROR, "Missing JWT_SECRET env var".to_string()))?;
 

@@ -1,0 +1,113 @@
+
+
+:root {
+  font-family: 'Nunito Sans', sans-serif !important;
+  line-height: 1.5;
+  font-weight: 100 !important;
+
+  color-scheme: light dark;
+  color: rgba(255, 255, 255, 0.87);
+  background-color: #242424;
+
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+input,
+textarea {
+  color: #000;
+  background-color: #fff;
+}
+a {
+  font-weight: 100;
+  color: #646cff;
+  text-decoration: inherit;
+}
+a:hover {
+  color: #535bf2;
+}
+
+body {
+  font-family: 'Nunito Sans',sans-serif !important;
+  font-weight: 100 !important;
+  margin: 0;
+
+  min-width: 320px;
+  min-height: 100vh;
+}
+
+h1 {
+  font-size: 3.2em;
+  line-height: 1.1;
+}
+
+button {
+  border-radius: 8px;
+  border: 1px solid transparent;
+  padding: 0.6em 1.2em;
+  font-size: 1em;
+  font-weight: 500;
+  font-family: inherit;
+  background-color: #1a1a1a;
+  cursor: pointer;
+  transition: border-color 0.25s;
+}
+button:hover {
+  border-color: #646cff;
+}
+button:focus,
+button:focus-visible {
+  outline: 4px auto -webkit-focus-ring-color;
+}
+
+@media (prefers-color-scheme: light) {
+  :root {
+    color: #213547;
+    background-color: #ffffff;
+  }
+  a:hover {
+    color: #747bff;
+  }
+  button {
+    background-color: #f9f9f9;
+  }
+}
+
+
+/* make sure the html/body and react root are full height */
+html, body, #root {
+  height: 100%;
+  margin: 0;
+  padding: 0;
+}
+
+/* top-level app root that wraps the whole page */
+.app-root {
+  min-height: 100vh;          /* fill viewport */
+  display: flex;
+  align-items: center;        /* vertical center */
+  justify-content: center;    /* horizontal center */
+  background-color: #e9f2fb;  /* subtle background, change as desired */
+  box-sizing: border-box;
+}
+
+/* wrapper for the signup card for extra centering/responsive behavior */
+.signup-wrap {
+  width: 100%;
+
+  justify-content: center;
+  align-items: center;
+  padding: 16px;
+}
+
+/* ensure the bootstrap form controls show dark text */
+.form-control {
+  color: #111 !important;
+  background-color: #fff !important;
+}
+
+/* remove default card border if any */
+.card.border-0 {
+  border: none !important;
+}

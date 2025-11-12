@@ -3,7 +3,10 @@ use uuid::Uuid;
 use sqlx::FromRow;
 use chrono::{DateTime, Utc};
 use std::str::FromStr;
+use tokio::{sync::{broadcast, Mutex}, time::Instant};
+use std::{net::SocketAddr, sync::Arc, time::Duration};
 
+use dashmap::DashMap;
 
 #[derive(Debug, Serialize, Deserialize, FromRow)]
 pub struct Document {
@@ -36,13 +39,37 @@ pub struct Collaborator {
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct ShareRequest {
-    pub user_id: i32,
-    pub role: String, // "reader" or "editor"
+    pub email: String, // <-- changed from user_id to email
+    pub role: Role,    // "reader" or "editor"
 }
+
 
 #[derive(Debug,FromRow)]
 pub struct Owner {
     pub owner_id: i32,
+}
+
+// Simple Operation types for plain text
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "type")]
+pub enum Op {
+    Insert { pos: usize, text: String },
+    Delete { pos: usize, len: usize },
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct ClientMessage {
+    pub client_id: String,      // <-- add this
+    pub client_version: u64,
+    pub op: Op,
+}
+
+// server -> clients broadcasts
+#[derive(Debug, Serialize, Deserialize,Clone)]
+pub struct ServerMessage {
+    pub client_id: String,      // <-- add this (sender id)
+    pub version: u64,
+    pub op: Op,
 }
 
 #[derive(Debug, Serialize, Deserialize, sqlx::Type)]
@@ -63,3 +90,8 @@ impl FromStr for Role {
         }
     }
 }
+
+
+
+
+
