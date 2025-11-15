@@ -5,7 +5,7 @@ use axum::{
 use anyhow::{Result, anyhow, bail};
 use dashmap::DashMap;
 use sqlx::PgPool;
-use crate::doc::models::{ClientMessage, CreateDocument, Document, Op, Owner, Role, ServerMessage,Collaborator, UpdateDocument,ShareRequest};
+use crate::doc::models::{ClientMessage, CreateDocument,DocumentWithRole, Document, Op, Owner, Role, ServerMessage,Collaborator, UpdateDocument,ShareRequest};
 use crate::auth::models::AuthUser;
 use uuid::Uuid;
 use axum::{
@@ -54,7 +54,8 @@ pub async fn get_doc(
     State(state): State<AppState>,
     AuthUser(_user): AuthUser,
     Path(doc_id): Path<Uuid>,
-) -> Result<Json<Document>, String> {
+) -> Result<Json<DocumentWithRole>, String> {
+    // Get the document
     let doc = sqlx::query_as!(
         Document,
         r#"
@@ -68,7 +69,43 @@ pub async fn get_doc(
     .await
     .map_err(|e| e.to_string())?;
 
-    Ok(Json(doc))
+    if doc.owner_id == _user.user_id{
+        let role = Role::Owner;
+         return Ok(Json(DocumentWithRole {
+        id: doc.id,
+        owner_id: doc.owner_id,
+        title: doc.title,
+        content: doc.content,
+        created_at: doc.created_at,
+        updated_at: doc.updated_at,
+        role,
+    }))
+    }
+
+    // Get the user's role
+    let role = sqlx::query_scalar!(
+        r#"
+        SELECT role as "role: Role"
+        FROM doc_collaborators
+        WHERE doc_id = $1 AND user_id = $2
+        "#,
+        doc_id,
+        _user.user_id
+    )
+    .fetch_optional(&state.pool)
+    .await
+    .map_err(|e| e.to_string())?
+    .unwrap_or(Role::Reader); // Default if not collaborator
+
+    Ok(Json(DocumentWithRole {
+        id: doc.id,
+        owner_id: doc.owner_id,
+        title: doc.title,
+        content: doc.content,
+        created_at: doc.created_at,
+        updated_at: doc.updated_at,
+        role,
+    }))
 }
 
 #[axum::debug_handler]
@@ -299,52 +336,51 @@ async fn handle_socket(mut socket: WebSocket, doc_id: Uuid, state: AppState) {
     let session_for_recv = session_arc.clone();
     let recv_task = tokio::spawn(async move {
         while let Some(Ok(message)) = socket_receiver.next().await {
-            match message {
-                Message::Text(txt) => {
-                        debug!("📨 Raw WebSocket message received: {}", txt);
+    match message {
+        Message::Text(txt) => {
+            debug!("📨 Raw WebSocket message received: {}", txt);
 
-                    match serde_json::from_str::<ClientMessage>(&txt) {
-                        Ok(client_msg) => {
-                            debug!(
-                                "🧠 Applying client op to session {}: {:?}",
-                                client_msg.client_id, client_msg.op
-                            );
-                            
-                            // Apply op to session
-                            if let Err(e) = apply_client_op(session_for_recv.clone(), client_msg.clone()).await {
-                                error!("apply op error: {:?}", e);
-                            }
+            // Try to peek at the message type before deserialization
+            if let Ok(json_val) = serde_json::from_str::<serde_json::Value>(&txt) {
+                if let Some(msg_type) = json_val.get("type").and_then(|v| v.as_str()) {
+                    match msg_type {
+                        "join" => {
+                            info!("👋 Client joined doc {}: {:?}", doc_id, json_val);
+                            // No client_version expected here
+                            continue;
+                        }
+                        "doc_update" => {
+                            match serde_json::from_value::<ClientMessage>(json_val) {
+                                Ok(client_msg) => {
+                                    debug!(
+                                        "🧠 Applying client op to session {}: {:?}",
+                                        client_msg.client_id, client_msg.op
+                                    );
 
-                            // --- 🔥 Immediately update the in-memory content for autosave ---
-                            if let Ok(mut s) = session_for_recv.try_lock() {
-                                match &client_msg.op {
-                                    Op::Insert { pos, text } => {
-                                        if *pos <= s.content.len() {
-                                            s.content.insert_str(*pos, text);
-                                        } else {
-                                            warn!("Insert out of bounds: pos={}, len={}", pos, s.content.len());
-                                        }
+                                    if let Err(e) = apply_client_op(session_for_recv.clone(), client_msg.clone()).await {
+                                        error!("apply op error: {:?}", e);
                                     }
-                                    Op::Delete { pos, len } => {
-                                        if *pos + *len <= s.content.len() {
-                                            s.content.replace_range(*pos..*pos + *len, "");
-                                        } else {
-                                            warn!("Delete out of bounds: pos={}, len={}", pos, s.content.len());
-                                        }
-                                    }
+
+                                   
+                                }
+                                Err(err) => {
+                                    error!("❌ invalid doc_update message: {:?}", err);
                                 }
                             }
-                            // ---------------------------------------------------------------
                         }
-                        Err(err) => {
-                            error!("invalid client message: {:?}", err);
+                        _ => {
+                            warn!("⚠️ Unknown message type: {}", msg_type);
                         }
                     }
                 }
-                Message::Close(_) => break,
-                _ => {}
+            } else {
+                error!("❌ Invalid JSON in WS message: {}", txt);
             }
         }
+        Message::Close(_) => break,
+        _ => {}
+    }
+}
     });
 
     // Wait for either task to finish
@@ -373,47 +409,149 @@ async fn ensure_session(state: &AppState, doc_id: Uuid) -> Arc<Mutex<DocSession>
     state.sessions.insert(doc_id, session.clone());
     session
 }
-/// Apply an operation coming from a client: handle versioning and transform
+// /// Apply an operation coming from a client: handle versioning and transform
+// async fn apply_client_op(session_arc: Arc<Mutex<DocSession>>, client_msg: ClientMessage) -> anyhow::Result<()> {
+//     let mut s = session_arc.lock().await;
+
+//     // If client is behind, transform the incoming op against ops from client_version..current_version
+//     if client_msg.client_version > s.version {
+//         // client ahead? impossible normally; reject
+//         anyhow::bail!("client version ahead of server");
+//     }
+
+//     let mut incoming = client_msg.op.clone();
+
+//     if client_msg.client_version < s.version {
+//         // transform incoming op across subsequent ops
+//         let start = client_msg.client_version as usize;
+//         let history_slice = &s.history[start..];
+//         for prior in history_slice {
+//             incoming = transform_op(incoming, prior.clone());
+//         }
+//     }
+
+//    debug!("✏️ Before apply_op_inplace, content = {:?}", s.content);
+// apply_op_inplace(&mut s.content, &incoming)?;
+// debug!("✅ After apply_op_inplace, content = {:?}", s.content);
+
+//     // append to history, bump version
+//     s.history.push(incoming.clone());
+//     s.version += 1;
+
+//     // broadcast to subscribers
+//     let srv_msg = ServerMessage {
+//         version: s.version,
+//         op: incoming,
+//         client_id: client_msg.client_id.clone(),
+
+//     };
+//     // ignore send errors (no subscribers)
+//     let _ = s.broadcaster.send(srv_msg);
+
+//     Ok(())
+// }
+
+// async fn apply_client_op(session_arc: Arc<Mutex<DocSession>>, client_msg: ClientMessage) -> anyhow::Result<()> {
+//     let mut s = session_arc.lock().await;
+
+//     if client_msg.client_version > s.version {
+//         anyhow::bail!("client version ahead of server");
+//     }
+
+//     let mut incoming = client_msg.op.clone();
+
+//     if client_msg.client_version < s.version {
+//         let start = client_msg.client_version as usize;
+//         let history_slice = &s.history[start..];
+//         for prior in history_slice {
+//             incoming = transform_op(incoming, prior.clone());
+//         }
+//     }
+
+//     debug!("✏️ Before apply_op_inplace, content = {:?}", s.content);
+//     apply_op_inplace(&mut s.content, &incoming)?;
+//     debug!("✅ After apply_op_inplace, content = {:?}", s.content);
+
+//     s.history.push(incoming.clone());
+//     s.version += 1;
+
+//     let current_version = s.version;
+//     let full_content = s.content.clone();
+//     let client_id_clone = client_msg.client_id.clone();
+
+//     debug!("🔔 Broadcasting doc_update for doc {} version {}", s.doc_id, current_version);
+
+//     let doc_update = ServerMessage::DocUpdate {
+//         version: current_version,
+//         content: full_content,
+//         client_id: client_id_clone,
+//     };
+
+//     // send to subscribers
+//     let _ = s.broadcaster.send(doc_update);
+
+//     Ok(())
+// }
+
 async fn apply_client_op(session_arc: Arc<Mutex<DocSession>>, client_msg: ClientMessage) -> anyhow::Result<()> {
     let mut s = session_arc.lock().await;
 
-    // If client is behind, transform the incoming op against ops from client_version..current_version
-    if client_msg.client_version > s.version {
-        // client ahead? impossible normally; reject
-        anyhow::bail!("client version ahead of server");
+    info!(
+        "🧩 Entered apply_client_op: client_version={} server_version={} history_len={}",
+        client_msg.client_version, s.version, s.history.len()
+    );
+
+   // Use a local variable for client_version so we don't have to mutate client_msg
+    let mut client_version = client_msg.client_version as i64;
+
+    if client_version > s.version as i64 {
+        warn!(
+            "⚠️ Client version ahead of server (client={}, server={}) — clamping to server version",
+            client_version, s.version
+        );
+        // Clamp to server version so we can attempt to transform/apply safely.
+        client_version = s.version as i64;
     }
+
 
     let mut incoming = client_msg.op.clone();
 
     if client_msg.client_version < s.version {
-        // transform incoming op across subsequent ops
         let start = client_msg.client_version as usize;
+        info!("🔁 Transforming ops from history slice starting at {}", start);
         let history_slice = &s.history[start..];
         for prior in history_slice {
             incoming = transform_op(incoming, prior.clone());
         }
     }
 
-   debug!("✏️ Before apply_op_inplace, content = {:?}", s.content);
-apply_op_inplace(&mut s.content, &incoming)?;
-debug!("✅ After apply_op_inplace, content = {:?}", s.content);
+    debug!("✏️ Before apply_op_inplace (v{}): {}", s.version, s.content);
+    if let Err(e) = apply_op_inplace(&mut s.content, &incoming) {
+        error!("💥 apply_op_inplace failed: {:?}", e);
+        return Err(e.into());
+    }
+    debug!("✅ After apply_op_inplace (v{}): {}", s.version, s.content);
 
-    // append to history, bump version
     s.history.push(incoming.clone());
     s.version += 1;
 
-    // broadcast to subscribers
-    let srv_msg = ServerMessage {
-        version: s.version,
-        op: incoming,
-        client_id: client_msg.client_id.clone(),
+    let current_version = s.version;
+    let full_content = s.content.clone();
+    let client_id_clone = client_msg.client_id.clone();
 
+    info!("🔔 Broadcasting doc_update for doc {} version {}", s.doc_id, current_version);
+
+    let doc_update = ServerMessage::DocUpdate {
+        version: current_version,
+        content: full_content,
+        client_id: client_id_clone,
     };
-    // ignore send errors (no subscribers)
-    let _ = s.broadcaster.send(srv_msg);
+
+    let _ = s.broadcaster.send(doc_update);
 
     Ok(())
 }
+
 
 /// Apply an Op to a text buffer
 fn apply_op_inplace(buf: &mut String, op: &Op) -> anyhow::Result<()> {

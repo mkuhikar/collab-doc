@@ -92,6 +92,18 @@ export default function LoginForm() {
                 {loading ? "Logging in..." : "Login"}
               </button>
             </form>
+            {/* Signup link */}
+<p className="text-center mt-3">
+  Don't have an account?{" "}
+  <span
+    className="text-primary fw-semibold"
+    role="button"
+    onClick={() => navigate("auth/signup")}
+    style={{ cursor: "pointer" }}
+  >
+    Signup
+  </span>
+</p>
 
             {message && (
               <div className="alert alert-info text-center mt-4 mb-0 py-2">

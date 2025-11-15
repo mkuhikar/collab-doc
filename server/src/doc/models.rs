@@ -24,6 +24,18 @@ pub struct CreateDocument {
     pub content: Option<String>,
 }
 
+
+#[derive(Serialize)]
+pub struct DocumentWithRole {
+    pub id: Uuid,
+    pub owner_id: i32,
+    pub title: String,
+    pub content: String,
+    pub created_at: chrono::DateTime<chrono::Utc>,
+    pub updated_at: chrono::DateTime<chrono::Utc>,
+    pub role: Role,
+}
+
 #[derive(Debug, Serialize, Deserialize)]
 pub struct UpdateDocument {
     pub title: Option<String>,
@@ -64,12 +76,22 @@ pub struct ClientMessage {
     pub op: Op,
 }
 
-// server -> clients broadcasts
-#[derive(Debug, Serialize, Deserialize,Clone)]
-pub struct ServerMessage {
-    pub client_id: String,      // <-- add this (sender id)
-    pub version: u64,
-    pub op: Op,
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum ServerMessage {
+    // full document update (works with your current frontend)
+    DocUpdate {
+        version: u64,
+        content: String,
+        client_id: String,
+    },
+
+    // Optionally also send op (for OT-aware frontends)
+    Op {
+        version: i64,
+        op: Op,
+        client_id: Uuid,
+    },
 }
 
 #[derive(Debug, Serialize, Deserialize, sqlx::Type)]
@@ -77,6 +99,7 @@ pub struct ServerMessage {
 pub enum Role {
     Reader,
     Editor,
+    Owner
 }
 
 impl FromStr for Role {

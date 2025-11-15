@@ -51,9 +51,7 @@ body {
   padding: 0;
 }
 
-#root {
-  height: 100%;
-}
+
 
 .container {
   min-height: 100vh; /* full viewport height */

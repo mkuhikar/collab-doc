@@ -139,7 +139,7 @@ export default function SignupForm() {
 
   // Redirect after short delay (so user sees message)
   setTimeout(() => {
-    window.location.href = "http://localhost:3000/auth/login";
+    window.location.href = "http://localhost:5173/auth/login";
   }, 1500);
   
 } catch (err) {

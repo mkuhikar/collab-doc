@@ -60,10 +60,10 @@ export default function DocsList() {
         {docs.map((doc) => (
           <div key={doc.id} className="col-12 col-sm-6 col-md-4 col-lg-3">
             <a
-              href={`http://localhost:5173/docs/${doc.id}`}
+              href={`http://localhost:5173/editor/${doc.id}`}
               className="text-decoration-none text-dark"
             >
-              <div className="card h-100 shadow-sm border-0 rounded-3 hover-shadow">
+              <div className="card h-100 shadow border-0 rounded-3 hover-shadow">
                 <div className="card-body">
                   <h6 className="card-title fw-semibold mb-2 text-truncate">
                     {doc.title || "Untitled Document"}
