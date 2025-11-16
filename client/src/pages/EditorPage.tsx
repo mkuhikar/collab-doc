@@ -6,6 +6,7 @@ import AppNavbar from "../components/Navbar";
 
 export default function EditorPage() {
   const skipNextRender = useRef(false);
+  const isUserTypingRef = useRef(false);
 
   const { id } = useParams();
   const [content, setContent] = useState("");
@@ -65,52 +66,7 @@ export default function EditorPage() {
 }, [content, role]);
 
 
-  // WebSocket setup
-//   useEffect(() => {
-//     if (!id || loading || role === "Reader") {
-//       console.log("🚫 Skipping WS connection - Role:", role, "Loading:", loading);
-//       return;
-//     }
-
-//     console.log("🔌 Opening WebSocket for doc:", id, "as role:", role);
-//     const ws = new WebSocket(`ws://localhost:3000/ws/docs/${id}`);
-//     wsRef.current = ws;
-
-//     ws.onopen = () => {
-//       console.log("✅ WebSocket connected");
-//       ws.send(JSON.stringify({ type: "join", client_id: clientId.current }));
-//     };
-
-//     ws.onmessage = (event) => {
-//       console.log("📩 WS message received:", event.data);
-//       try {
-//         const msg = JSON.parse(event.data);
-//         if (msg.client_id && msg.client_id === clientId.current) {
-//           console.log("↩️ Ignoring own message");
-//           return;
-//         }
-
-//         if (msg.type === "doc_update") {
-//           console.log("📝 Applying remote update");
-//           setContent(msg.content);
-//           if (editorRef.current && editorRef.current.textContent !== msg.content) {
-//             console.log("🔁 Updating editor DOM text");
-//             editorRef.current.textContent = msg.content;
-//           }
-//         }
-//       } catch (err) {
-//         console.error("❌ Failed to parse WS message:", err);
-//       }
-//     };
-
-//     ws.onclose = () => console.log("❌ WS connection closed");
-//     ws.onerror = (err) => console.error("⚠️ WS error:", err);
-
-//     return () => {
-//       console.log("🧹 Cleaning up WS connection");
-//       ws.close();
-//     };
-//   }, [id, loading, role]);
+ 
 
 // WebSocket setup
 useEffect(() => {
@@ -152,15 +108,45 @@ useEffect(() => {
       }
       return;
       }
+      if (msg.type === "force_refresh") {
+      console.warn("🔄 FORCE REFRESH received — resetting local content!");
+      console.log("🔢 Server version:", msg.version);
 
-      if (msg.type === "doc_update") {
-      console.log("📝 Applying remote update (version:", msg.version, ")");
+      // Update content and version
+      clientVersionRef.current = msg.version;
       setContent(msg.content);
-      clientVersionRef.current = msg.version; // ✅ keep in sync
-      if (editorRef.current && editorRef.current.textContent !== msg.content) {
+
+      // Update editor safely
+      if (editorRef.current) {
         editorRef.current.textContent = msg.content;
       }
+
+      return;
     }
+
+      if (msg.type === "doc_update") {
+  console.log("📝 Remote update received (v", msg.version, ")");
+
+  // Do NOT overwrite if the local user is typing right now
+  if (isUserTypingRef.current) {
+    console.log("⏸️ Skipping remote DOM update because user is typing");
+    // Still update version so client stays in sync
+    clientVersionRef.current = msg.version;
+    return;
+  }
+
+  console.log("🔧 Applying remote update to DOM");
+
+  clientVersionRef.current = msg.version;
+  setContent(msg.content);
+
+  if (editorRef.current && editorRef.current.textContent !== msg.content) {
+    editorRef.current.textContent = msg.content;
+  }
+
+  return;
+}
+    
   } catch (err) {
     console.error("❌ Failed to parse WS message:", err);
   }
@@ -181,13 +167,19 @@ useEffect(() => {
 
   // Input handler
   const handleInput = () => {
+    
   if (!editorRef.current || role === "Reader") {
     console.log("🚫 Ignored input — role:", role);
     return;
   }
 
-  skipNextRender.current = true; // ⬅️ prevent DOM overwrite on next render
 
+  skipNextRender.current = true; // ⬅️ prevent DOM overwrite on next render
+isUserTypingRef.current = true;
+
+setTimeout(() => {
+  isUserTypingRef.current = false;
+}, 200); // you can tune (150–250ms is ideal)
   const newText = editorRef.current.textContent || "";
   const oldText = content;
 

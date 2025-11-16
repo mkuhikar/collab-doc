@@ -409,91 +409,12 @@ async fn ensure_session(state: &AppState, doc_id: Uuid) -> Arc<Mutex<DocSession>
     state.sessions.insert(doc_id, session.clone());
     session
 }
-// /// Apply an operation coming from a client: handle versioning and transform
-// async fn apply_client_op(session_arc: Arc<Mutex<DocSession>>, client_msg: ClientMessage) -> anyhow::Result<()> {
-//     let mut s = session_arc.lock().await;
 
-//     // If client is behind, transform the incoming op against ops from client_version..current_version
-//     if client_msg.client_version > s.version {
-//         // client ahead? impossible normally; reject
-//         anyhow::bail!("client version ahead of server");
-//     }
 
-//     let mut incoming = client_msg.op.clone();
-
-//     if client_msg.client_version < s.version {
-//         // transform incoming op across subsequent ops
-//         let start = client_msg.client_version as usize;
-//         let history_slice = &s.history[start..];
-//         for prior in history_slice {
-//             incoming = transform_op(incoming, prior.clone());
-//         }
-//     }
-
-//    debug!("✏️ Before apply_op_inplace, content = {:?}", s.content);
-// apply_op_inplace(&mut s.content, &incoming)?;
-// debug!("✅ After apply_op_inplace, content = {:?}", s.content);
-
-//     // append to history, bump version
-//     s.history.push(incoming.clone());
-//     s.version += 1;
-
-//     // broadcast to subscribers
-//     let srv_msg = ServerMessage {
-//         version: s.version,
-//         op: incoming,
-//         client_id: client_msg.client_id.clone(),
-
-//     };
-//     // ignore send errors (no subscribers)
-//     let _ = s.broadcaster.send(srv_msg);
-
-//     Ok(())
-// }
-
-// async fn apply_client_op(session_arc: Arc<Mutex<DocSession>>, client_msg: ClientMessage) -> anyhow::Result<()> {
-//     let mut s = session_arc.lock().await;
-
-//     if client_msg.client_version > s.version {
-//         anyhow::bail!("client version ahead of server");
-//     }
-
-//     let mut incoming = client_msg.op.clone();
-
-//     if client_msg.client_version < s.version {
-//         let start = client_msg.client_version as usize;
-//         let history_slice = &s.history[start..];
-//         for prior in history_slice {
-//             incoming = transform_op(incoming, prior.clone());
-//         }
-//     }
-
-//     debug!("✏️ Before apply_op_inplace, content = {:?}", s.content);
-//     apply_op_inplace(&mut s.content, &incoming)?;
-//     debug!("✅ After apply_op_inplace, content = {:?}", s.content);
-
-//     s.history.push(incoming.clone());
-//     s.version += 1;
-
-//     let current_version = s.version;
-//     let full_content = s.content.clone();
-//     let client_id_clone = client_msg.client_id.clone();
-
-//     debug!("🔔 Broadcasting doc_update for doc {} version {}", s.doc_id, current_version);
-
-//     let doc_update = ServerMessage::DocUpdate {
-//         version: current_version,
-//         content: full_content,
-//         client_id: client_id_clone,
-//     };
-
-//     // send to subscribers
-//     let _ = s.broadcaster.send(doc_update);
-
-//     Ok(())
-// }
-
-async fn apply_client_op(session_arc: Arc<Mutex<DocSession>>, client_msg: ClientMessage) -> anyhow::Result<()> {
+async fn apply_client_op(
+    session_arc: Arc<Mutex<DocSession>>,
+    client_msg: ClientMessage
+) -> anyhow::Result<()> {
     let mut s = session_arc.lock().await;
 
     info!(
@@ -501,19 +422,19 @@ async fn apply_client_op(session_arc: Arc<Mutex<DocSession>>, client_msg: Client
         client_msg.client_version, s.version, s.history.len()
     );
 
-   // Use a local variable for client_version so we don't have to mutate client_msg
+    // Use local client_version
     let mut client_version = client_msg.client_version as i64;
 
+    // --- VERSION CLAMPING ---
     if client_version > s.version as i64 {
         warn!(
             "⚠️ Client version ahead of server (client={}, server={}) — clamping to server version",
             client_version, s.version
         );
-        // Clamp to server version so we can attempt to transform/apply safely.
         client_version = s.version as i64;
     }
 
-
+    // --- TRANSFORMATION ---
     let mut incoming = client_msg.op.clone();
 
     if client_msg.client_version < s.version {
@@ -526,26 +447,49 @@ async fn apply_client_op(session_arc: Arc<Mutex<DocSession>>, client_msg: Client
     }
 
     debug!("✏️ Before apply_op_inplace (v{}): {}", s.version, s.content);
-    if let Err(e) = apply_op_inplace(&mut s.content, &incoming) {
-        error!("💥 apply_op_inplace failed: {:?}", e);
-        return Err(e.into());
+
+    // --- APPLY OP, BUT HANDLE FAILURE GRACEFULLY ---
+    match apply_op_inplace(&mut s.content, &incoming) {
+        Ok(_) => {
+            // Normal success
+            debug!("✅ After apply_op_inplace (v{}): {}", s.version, s.content);
+            s.history.push(incoming.clone());
+            s.version += 1;
+        }
+
+        Err(e) => {
+            // 🚨 This replaces your old `return Err(e.into())`
+            error!("💥 apply_op_inplace failed: {:?}", e);
+
+            warn!("🔄 Sending ForceRefresh to client {} — state mismatch detected", client_msg.client_id);
+
+            let force_msg = ServerMessage::ForceRefresh {
+                version: s.version,
+                content: s.content.clone(),
+            };
+
+            // broadcast to only that client OR to everyone — your call
+            let _ = s.broadcaster.send(force_msg);
+
+            // Don't kill the session — mark success so caller does not break connection
+            return Ok(());
+        }
     }
-    debug!("✅ After apply_op_inplace (v{}): {}", s.version, s.content);
 
-    s.history.push(incoming.clone());
-    s.version += 1;
-
+    // --- BROADCAST UPDATE ---
     let current_version = s.version;
     let full_content = s.content.clone();
-    let client_id_clone = client_msg.client_id.clone();
-
-    info!("🔔 Broadcasting doc_update for doc {} version {}", s.doc_id, current_version);
 
     let doc_update = ServerMessage::DocUpdate {
         version: current_version,
         content: full_content,
-        client_id: client_id_clone,
+        client_id: client_msg.client_id.clone(),
     };
+
+    info!(
+        "🔔 Broadcasting doc_update for doc {} version {}",
+        s.doc_id, current_version
+    );
 
     let _ = s.broadcaster.send(doc_update);
 

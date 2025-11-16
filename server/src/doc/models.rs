@@ -79,20 +79,18 @@ pub struct ClientMessage {
 #[derive(Debug, Serialize, Deserialize, Clone)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum ServerMessage {
-    // full document update (works with your current frontend)
     DocUpdate {
         version: u64,
         content: String,
         client_id: String,
     },
 
-    // Optionally also send op (for OT-aware frontends)
-    Op {
-        version: i64,
-        op: Op,
-        client_id: Uuid,
+    ForceRefresh {
+        version: u64,
+        content: String,
     },
 }
+
 
 #[derive(Debug, Serialize, Deserialize, sqlx::Type)]
 #[sqlx(type_name = "role", rename_all = "lowercase")] 
