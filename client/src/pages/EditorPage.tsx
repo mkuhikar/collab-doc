@@ -2,11 +2,13 @@ import { useEffect, useState, useRef } from "react";
 import { useParams } from "react-router-dom";
 import { Button, Modal, Form, Spinner, Alert } from "react-bootstrap";
 import { v4 as uuidv4 } from "uuid";
-import AppNavbar from "../components/Navbar";
-
+import AppTopBar from "../components/AppTopBar";
+import LeftSideBar from "../components/LeftSideBar";
 export default function EditorPage() {
   const skipNextRender = useRef(false);
   const isUserTypingRef = useRef(false);
+  const [documentLoaded, setDocumentLoaded] = useState(false);
+
 
   const { id } = useParams();
   const [content, setContent] = useState("");
@@ -21,6 +23,8 @@ export default function EditorPage() {
   const [shareEmail, setShareEmail] = useState("");
   const [shareRole, setShareRole] = useState<"Reader" | "Editor">("Reader");
 
+
+    
   // Fetch document + role
   useEffect(() => {
     async function fetchDoc() {
@@ -31,12 +35,16 @@ export default function EditorPage() {
         const res = await fetch(`http://localhost:3000/docs/${id}`, {
           headers: { Authorization: `Bearer ${token}` },
         });
+        console.log("🔑 Token being sent:", token);
+
         console.log("🧾 Response status:", res.status);
         if (!res.ok) throw new Error("Failed to fetch document");
         const data = await res.json();
         console.log("📄 Document data:", data);
         setContent(data.content || "");
         setRole(data.role || "Reader");
+              setDocumentLoaded(true);
+
       } catch (err) {
         console.error("❌ Error loading document:", err);
         alert("Failed to load document content.");
@@ -72,6 +80,10 @@ export default function EditorPage() {
 useEffect(() => {
   if (!id || loading || role === "Reader") {
     console.log("🚫 Skipping WS connection - Role:", role, "Loading:", loading);
+    return;
+  }
+ if (!id || !documentLoaded) {
+    console.log("⏳ WS waiting until documentLoaded");
     return;
   }
 
@@ -156,7 +168,7 @@ useEffect(() => {
     console.log("🧹 Cleaning up WebSocket connection");
     socket.close();
   };
-}, [id, loading, role]);
+}, [id, loading, role, documentLoaded]);
 
   // Diff function
   function findDiffStart(a: string, b: string): number {
@@ -293,90 +305,118 @@ setTimeout(() => {
     console.error("💥 Network/server error:", err);
     alert("Error sharing document.");
   }
+  
 }
+
+const shareButton = (
+    <Button
+      variant="primary"
+      className="btn btn-info"
+      onClick={() => setShowShareModal(true)}
+      style={{ minWidth: 86 }}
+    >
+      Share
+    </Button>
+  );
+
+
 
 
   return (
     <>
-      <AppNavbar />
-      <div className="container-fluid bg-light vh-100 p-0 d-flex flex-column">
-        <div className="bg-white border-bottom shadow-sm py-2 px-3 d-flex align-items-center justify-content-between">
-  <h5 className="mb-0 fw-semibold">
-    {role === "Reader" ? "Viewing Document" : "Editing Document"}
-  </h5>
+      {/* Top bar stays OUTSIDE and ABOVE but visually connected */}
+<AppTopBar
+  title="Notes"
+  actions={["Editor", "Owner"].includes(role) ? shareButton : null}
+/>
 
-  {(role === "Editor"||role ==="Owner") && (
-    <Button variant="primary" className="btn btn-info" onClick={() => setShowShareModal(true)}>
-      Share
-    </Button>
-  )}
-</div>
+      {/* Full screen layout */}
+      <div className="d-flex" style={{ height: "calc(100vh - 64px)" }}>
+        
+        {/* Sidebar on the left */}
+        <LeftSideBar />
 
+        {/* Main editor area */}
+        <div className="flex-grow-1 d-flex flex-column bg-white">
 
-        {role === "Reader" && (
-          <Alert variant="warning" className="text-center rounded-0 m-0">
-            You can only view this document.
-          </Alert>
-        )}
+          {/* Editor header — now seamlessly below top bar */}
+          <div className="border-bottom d-flex align-items-center justify-content-between px-4 py-3">
+            <h5 className="mb-0 fw-semibold">
+              {role === "Reader" ? "Viewing Document" : "Editing Document"}
+            </h5>
 
-        <div
-          ref={editorRef}
-          className={`flex-grow-1 bg-white p-4 overflow-auto ${
-            role === "Reader" ? "text-muted" : ""
-          }`}
-          contentEditable={role !== "Reader"}
-          suppressContentEditableWarning
-          onInput={handleInput}
-          style={{
-            minHeight: "80vh",
-            outline: "none",
-            border: "none",
-            fontSize: "1.1rem",
-            whiteSpace: "pre-wrap",
-            wordBreak: "break-word",
-          }}
-        />
+            
+          </div>
+
+          {/* Optional warning */}
+          {role === "Reader" && (
+            <Alert variant="warning" className="rounded-0 text-center m-0">
+              You can only view this document.
+            </Alert>
+          )}
+
+          {/* Editable area */}
+          <div
+            ref={editorRef}
+            className="flex-grow-1 p-4 overflow-auto"
+            contentEditable={role !== "Reader"}
+            suppressContentEditableWarning
+            onInput={handleInput}
+            style={{
+              outline: "none",
+              border: "none",
+              fontSize: "1.15rem",
+              whiteSpace: "pre-wrap",
+              wordBreak: "break-word",
+            }}
+          />
+        </div>
       </div>
-      <Modal show={showShareModal} onHide={() => setShowShareModal(false)}>
-  <Modal.Header closeButton>
-    <Modal.Title>Share Document</Modal.Title>
-  </Modal.Header>
 
-  <Modal.Body>
-    <Form>
-      <Form.Group className="mb-3">
-        <Form.Label>Email</Form.Label>
-        <Form.Control
-          type="email"
-          placeholder="Enter email"
-          value={shareEmail}
-          onChange={(e) => setShareEmail(e.target.value)}
-        />
-      </Form.Group>
+       {/* Share Modal */}
+    <Modal show={showShareModal} onHide={() => setShowShareModal(false)}>
+      <Modal.Header closeButton>
+        <Modal.Title>Share Document</Modal.Title>
+      </Modal.Header>
 
-      <Form.Group className="mb-3">
-        <Form.Label>Role</Form.Label>
-        <Form.Select
-          value={shareRole}
-          onChange={(e) => setShareRole(e.target.value as "Reader" | "Editor")}
-        >
-          <option value="Reader">Reader</option>
-          <option value="Editor">Editor</option>
-        </Form.Select>
-      </Form.Group>
-    </Form>
-  </Modal.Body>
+      <Modal.Body>
+        <Form>
+          <Form.Group className="mb-3">
+            <Form.Label>Email</Form.Label>
+            <Form.Control
+              type="email"
+              placeholder="Enter email"
+              value={shareEmail}
+              onChange={(e) => setShareEmail(e.target.value)}
+            />
+          </Form.Group>
 
-  <Modal.Footer>
-    <Button variant="secondary" onClick={() => setShowShareModal(false)}>
-      Cancel
-    </Button>
-    <Button variant="primary" onClick={shareDocument}>
-      Share
-    </Button>
-  </Modal.Footer>
-</Modal>
+          <Form.Group className="mb-3">
+            <Form.Label>Role</Form.Label>
+            <Form.Select
+              value={shareRole}
+              onChange={(e) => setShareRole(e.target.value as "Reader" | "Editor")}
+            >
+              <option value="Reader">Reader</option>
+              <option value="Editor">Editor</option>
+            </Form.Select>
+          </Form.Group>
+        </Form>
+      </Modal.Body>
 
+      <Modal.Footer>
+        <Button variant="secondary" onClick={() => setShowShareModal(false)}>
+          Cancel
+        </Button>
+        <Button variant="primary" onClick={shareDocument}>
+          Share
+        </Button>
+      </Modal.Footer>
+    </Modal>
     </>
   );
 }
+
+
+
+
