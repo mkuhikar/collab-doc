@@ -16,7 +16,7 @@ pub fn create_routes(state: AppState) -> Router {
         .route("/ws/docs/{id}", get(ws_handler))
         .layer(
             CorsLayer::new()
-                .allow_origin("http://localhost:5173".parse::<axum::http::HeaderValue>().unwrap())
+                .allow_origin("http://104.197.202.203".parse::<axum::http::HeaderValue>().unwrap())
                 .allow_methods(Any)
                 .allow_headers(Any),
         )

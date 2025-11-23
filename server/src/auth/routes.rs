@@ -11,7 +11,7 @@ pub fn create_routes(pool: PgPool) -> Router {
         .route("/user/email/{email}", get(get_user_by_email))
         .layer(
             CorsLayer::new()
-                .allow_origin("http://localhost:5173".parse::<axum::http::HeaderValue>().unwrap()) // your frontend URL
+                .allow_origin("http://104.197.202.203".parse::<axum::http::HeaderValue>().unwrap()) // your frontend URL
                 .allow_methods(Any)
                 .allow_headers(Any),
         )
