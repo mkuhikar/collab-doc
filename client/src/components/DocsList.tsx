@@ -60,7 +60,7 @@ export default function DocsList() {
         {docs.map((doc) => (
           <div key={doc.id} className="col-12 col-sm-6 col-md-4 col-lg-3">
             <a
-              href={`http://104.197.202.203:3000/editor/${doc.id}`}
+              href={`http://104.197.202.203/editor/${doc.id}`}
               className="text-decoration-none text-dark"
             >
               <div className="card h-100 shadow border-0 rounded-3 hover-shadow">
