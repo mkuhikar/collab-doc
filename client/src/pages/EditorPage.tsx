@@ -32,7 +32,7 @@ export default function EditorPage() {
       console.log("📡 Fetching document:", id);
       try {
         const token = localStorage.getItem("authToken")?.replace(/^"|"$/g, "");
-        const res = await fetch(`http://localhost:3000/docs/${id}`, {
+        const res = await fetch(`http://104.197.202.203:3000/docs/${id}`, {
           headers: { Authorization: `Bearer ${token}` },
         });
         console.log("🔑 Token being sent:", token);
@@ -87,7 +87,7 @@ useEffect(() => {
     return;
   }
 
-  const wsUrl = `ws://localhost:3000/ws/docs/${id}`;
+  const wsUrl = `ws://104.197.202.203:3000/ws/docs/${id}`;
   console.log("🌐 Connecting to WebSocket:", wsUrl, "as role:", role);
 
   const socket = new WebSocket(wsUrl);
@@ -276,7 +276,7 @@ setTimeout(() => {
 
     const token = localStorage.getItem("authToken")?.replace(/^"|"$/g, "");
 
-    const res = await fetch(`http://localhost:3000/docs/${id}/share`, {
+    const res = await fetch(`http://104.197.202.203:3000/docs/${id}/share`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",

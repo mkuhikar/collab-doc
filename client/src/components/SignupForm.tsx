@@ -11,7 +11,7 @@
 //     setMessage("");
 
 //     try {
-//       const res = await fetch("http://localhost:3000/auth/signup", {
+//       const res = await fetch("http://104.197.202.203:3000/auth/signup", {
 //         method: "POST",
 //         headers: { "Content-Type": "application/json" },
 //         body: JSON.stringify(form),
@@ -123,7 +123,7 @@ export default function SignupForm() {
     setMessage("");
 
     try {
-  const res = await fetch("http://localhost:3000/auth/signup", {
+  const res = await fetch("http://104.197.202.203:3000/auth/signup", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(form),
@@ -139,7 +139,7 @@ export default function SignupForm() {
 
   // Redirect after short delay (so user sees message)
   setTimeout(() => {
-    window.location.href = "http://localhost:5173/auth/login";
+    window.location.href = "http://104.197.202.203:5173/auth/login";
   }, 1500);
   
 } catch (err) {

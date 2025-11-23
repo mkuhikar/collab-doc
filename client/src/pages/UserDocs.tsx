@@ -10,7 +10,7 @@ export default function UserDocsPage() {
         const token = localStorage.getItem("authToken")?.replace(/^"|"$/g, "");
 
         try {
-            const response = await fetch("http://localhost:3000/docs", {
+            const response = await fetch("http://104.197.202.203:3000/docs", {
                 method: "POST",
                 headers: {
                     "Content-Type": "application/json",
